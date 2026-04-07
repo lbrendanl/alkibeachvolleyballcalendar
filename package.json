@@ -1,0 +1,8 @@
+{
+  "name": "alkibeachvolleyballcalendar",
+  "version": "1.0.0",
+  "description": "Alki Beach volleyball court availability calendar",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

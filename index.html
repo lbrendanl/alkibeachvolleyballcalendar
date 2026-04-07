@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alki Beach Volleyball Court Availability</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f4f8;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #1a73e8;
+      color: white;
+      padding: 20px 16px;
+      text-align: center;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header p { font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
+
+    /* ── Page layout ── */
+    .page { max-width: 960px; margin: 0 auto; padding: 20px 12px 40px; }
+
+    /* ── Legend ── */
+    .legend {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 0.78rem;
+      color: #555;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Month heading ── */
+    .month-heading {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: #1a1a1a;
+    }
+
+    /* ── Calendar grid ── */
+    .calendar-scroll { overflow-x: auto; }
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(110px, 1fr));
+      gap: 4px;
+      min-width: 600px;
+    }
+
+    .day-header {
+      text-align: center;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #888;
+      padding: 4px 0 6px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .day-cell {
+      background: white;
+      border-radius: 8px;
+      padding: 8px 8px 10px;
+      min-height: 74px;
+      transition: box-shadow 0.15s;
+    }
+    .day-cell.clickable { cursor: pointer; }
+    .day-cell.clickable:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.13); }
+    .day-cell.empty { background: transparent; }
+    .day-cell.past { background: #f9f9f9; }
+    .day-cell.today { border: 2px solid #1a73e8; }
+
+    .day-number {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #777;
+      margin-bottom: 7px;
+      line-height: 1;
+    }
+    .day-cell.today .day-number { color: #1a73e8; }
+    .day-cell.past .day-number { color: #bbb; }
+
+    /* ── Court dots ── */
+    .courts-row {
+      display: grid;
+      grid-template-columns: repeat(4, 11px);
+      grid-template-rows: repeat(2, 11px);
+      gap: 3px;
+    }
+    .court-dot {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+    }
+    .court-dot.green  { background: #34a853; }
+    .court-dot.red    { background: #ea4335; }
+    .court-dot.gray   { background: #ddd; }
+
+    /* ── Loading / error ── */
+    #status-msg {
+      text-align: center;
+      padding: 48px 16px;
+      font-size: 0.95rem;
+      color: #666;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 460px;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .modal-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .modal-top h3 { font-size: 1rem; font-weight: 600; color: #1a1a1a; }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.4rem;
+      line-height: 1;
+      cursor: pointer;
+      color: #999;
+      padding: 0 0 0 12px;
+    }
+    .modal-close:hover { color: #333; }
+
+    .court-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 0;
+      border-top: 1px solid #f0f0f0;
+    }
+    .court-row:first-child { border-top: none; }
+    .court-dot-modal {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      margin-top: 3px;
+      flex-shrink: 0;
+    }
+    .court-label { font-size: 0.82rem; font-weight: 600; color: #333; }
+    .court-slots { margin-top: 2px; }
+    .slot-line { font-size: 0.78rem; color: #555; }
+    .no-bookings { font-size: 0.78rem; color: #34a853; font-weight: 500; }
+
+    /* ── Disclaimer ── */
+    .disclaimer {
+      margin-top: 24px;
+      padding: 12px 16px;
+      background: #fffbea;
+      border-left: 4px solid #f9a825;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      color: #555;
+      line-height: 1.5;
+    }
+    .disclaimer a { color: #1a73e8; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Alki Beach Volleyball Court Availability</h1>
+  <p>Alki Beach Park East Courts 01–07 &middot; West Seattle</p>
+</header>
+
+<div class="page">
+  <div id="status-msg">Loading court availability&hellip;</div>
+
+  <div id="main-content" style="display:none">
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#34a853"></div> Available
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#ea4335"></div> Has bookings
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#ddd"></div> No data
+      </div>
+    </div>
+
+    <div id="months-container"></div>
+  </div>
+
+  <div class="disclaimer">
+    <strong>Note:</strong> This site shows availability approximately 3 weeks out and may not reflect
+    last-minute changes. Please confirm at
+    <a href="https://anc.apm.activecommunities.com/seattle/reservation" target="_blank" rel="noopener">
+      anc.apm.activecommunities.com/seattle/reservation
+    </a>.
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-top">
+      <h3 id="modal-date-title"></h3>
+      <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+  // ── Constants ──────────────────────────────────────────────────────────────
+  const COURT_IDS   = [2443, 2444, 2445, 2446, 2447, 2448, 2449];
+  const COURT_NAMES = COURT_IDS.map((_, i) =>
+    `Alki Beach Park Volleyball East Court ${String(i + 1).padStart(2, '0')}`
+  );
+
+  const DAYS_AHEAD = 21;
+  const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  // ── Date helpers ───────────────────────────────────────────────────────────
+  function localToday() {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  function ymd(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  function addDays(d, n) {
+    const r = new Date(d);
+    r.setDate(r.getDate() + n);
+    return r;
+  }
+
+  function monthEnd(d) {
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  }
+
+  // ── Data parsing ───────────────────────────────────────────────────────────
+  // The APM API returns availability time slots for a day (times[] = free windows).
+  // Gaps between those free windows (anchored at 08:00 and 21:00) are booked.
+  function computeBookedSlots(daily) {
+    const START = '08:00:00';
+    const END   = '21:00:00';
+    const times = daily.times || [];
+    // Build interleaved array: [DAY_START, free1_start, free1_end, free2_start, ..., DAY_END]
+    const all = [START, ...times.flatMap(t => [t.start_time, t.end_time]), END];
+    const booked = [];
+    for (let i = 0; i + 1 < all.length; i += 2) {
+      if (all[i] < all[i + 1]) {
+        booked.push({ start: all[i].slice(0, 5), end: all[i + 1].slice(0, 5) });
+      }
+    }
+    return booked;
+  }
+
+  function formatTime(hhmm) {
+    const [hStr, mStr] = hhmm.split(':');
+    const h = parseInt(hStr, 10);
+    const m = mStr;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hour = h % 12 || 12;
+    return `${hour}:${m} ${ampm}`;
+  }
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+  // courtData[courtId][dateStr] = { booked: Array | null }
+  //   booked = []          → no bookings (green)
+  //   booked = [{start,end}, ...] → has bookings (red)
+  //   booked = null        → closed / status != 0 (gray)
+  //   key absent           → outside query range (gray)
+  const courtData = {};
+
+  async function fetchCourt(courtId, startDate, endDate) {
+    const res = await fetch(
+      `/api/availability/${courtId}?start_date=${ymd(startDate)}&end_date=${ymd(endDate)}`
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status} for court ${courtId}`);
+    const json = await res.json();
+    const days = json?.body?.details?.daily_details || [];
+    courtData[courtId] = {};
+    for (const day of days) {
+      if (day.status === 0) {
+        courtData[courtId][day.date] = { booked: computeBookedSlots(day) };
+      } else {
+        // status != 0: closed or fully blocked — treat as gray
+        courtData[courtId][day.date] = { booked: null };
+      }
+    }
+  }
+
+  // ── Calendar rendering ─────────────────────────────────────────────────────
+  function dotClass(courtId, dateString, isInRange) {
+    if (!isInRange) return 'gray';
+    const dayData = courtData[courtId]?.[dateString];
+    if (!dayData) return 'gray';                // not returned by API
+    if (dayData.booked === null) return 'gray'; // closed
+    return dayData.booked.length > 0 ? 'red' : 'green';
+  }
+
+  function buildMonthGrid(year, month, today, rangeStart, rangeEnd) {
+    const container = document.createElement('div');
+    container.style.marginBottom = '28px';
+
+    const heading = document.createElement('div');
+    heading.className = 'month-heading';
+    heading.textContent = new Date(year, month, 1)
+      .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    container.appendChild(heading);
+
+    const scroll = document.createElement('div');
+    scroll.className = 'calendar-scroll';
+    container.appendChild(scroll);
+
+    const grid = document.createElement('div');
+    grid.className = 'calendar-grid';
+    scroll.appendChild(grid);
+
+    // Day-of-week headers
+    DAY_HEADERS.forEach(h => {
+      const el = document.createElement('div');
+      el.className = 'day-header';
+      el.textContent = h;
+      grid.appendChild(el);
+    });
+
+    const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    // Leading empty cells
+    for (let i = 0; i < firstDay; i++) {
+      const empty = document.createElement('div');
+      empty.className = 'day-cell empty';
+      grid.appendChild(empty);
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const cellDate = new Date(year, month, d);
+      const dateStr  = ymd(cellDate);
+      const isToday  = cellDate.getTime() === today.getTime();
+      const isPast   = cellDate < today;
+      const isInRange = cellDate >= rangeStart && cellDate <= rangeEnd;
+
+      const cell = document.createElement('div');
+      const classes = ['day-cell'];
+      if (isToday) classes.push('today');
+      else if (isPast) classes.push('past');
+      if (isInRange) classes.push('clickable');
+      cell.className = classes.join(' ');
+
+      const num = document.createElement('div');
+      num.className = 'day-number';
+      num.textContent = d;
+      cell.appendChild(num);
+
+      const row = document.createElement('div');
+      row.className = 'courts-row';
+      COURT_IDS.forEach(id => {
+        const dot = document.createElement('div');
+        dot.className = `court-dot ${dotClass(id, dateStr, isInRange)}`;
+        row.appendChild(dot);
+      });
+      cell.appendChild(row);
+
+      if (isInRange) {
+        cell.addEventListener('click', () => openModal(dateStr, cellDate));
+      }
+
+      grid.appendChild(cell);
+    }
+
+    return container;
+  }
+
+  // ── Modal ──────────────────────────────────────────────────────────────────
+  function openModal(dateStr, date) {
+    document.getElementById('modal-date-title').textContent =
+      date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+    const body = document.getElementById('modal-body');
+    body.innerHTML = '';
+
+    COURT_IDS.forEach((id, i) => {
+      const dayData = courtData[id]?.[dateStr];
+      const booked  = dayData?.booked ?? null;
+
+      const row = document.createElement('div');
+      row.className = 'court-row';
+
+      const dotColor = booked === null ? '#ddd' : booked.length > 0 ? '#ea4335' : '#34a853';
+      const dot = document.createElement('div');
+      dot.className = 'court-dot-modal';
+      dot.style.background = dotColor;
+      row.appendChild(dot);
+
+      const info = document.createElement('div');
+
+      const label = document.createElement('div');
+      label.className = 'court-label';
+      label.textContent = COURT_NAMES[i];
+      info.appendChild(label);
+
+      const slots = document.createElement('div');
+      slots.className = 'court-slots';
+
+      if (booked === null) {
+        const p = document.createElement('p');
+        p.className = 'slot-line';
+        p.style.color = '#aaa';
+        p.textContent = 'No data available';
+        slots.appendChild(p);
+      } else if (booked.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'no-bookings';
+        p.textContent = 'No bookings';
+        slots.appendChild(p);
+      } else {
+        booked.forEach(slot => {
+          const p = document.createElement('p');
+          p.className = 'slot-line';
+          p.textContent = `Booked: ${formatTime(slot.start)} – ${formatTime(slot.end)}`;
+          slots.appendChild(p);
+        });
+      }
+
+      info.appendChild(slots);
+      row.appendChild(info);
+      body.appendChild(row);
+    });
+
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('modal-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+
+  // ── Bootstrap ──────────────────────────────────────────────────────────────
+  async function init() {
+    const today      = localToday();
+    const rangeStart = today;
+    const rangeEnd   = addDays(today, DAYS_AHEAD);
+
+    try {
+      await Promise.all(COURT_IDS.map(id => fetchCourt(id, rangeStart, rangeEnd)));
+    } catch (err) {
+      document.getElementById('status-msg').textContent =
+        'Error loading court data. Please refresh the page.';
+      console.error(err);
+      return;
+    }
+
+    document.getElementById('status-msg').style.display = 'none';
+    document.getElementById('main-content').style.display = 'block';
+
+    const container = document.getElementById('months-container');
+
+    // Determine which months to show (always at least current month)
+    const months = new Set();
+    let d = new Date(today.getFullYear(), today.getMonth(), 1);
+    const last = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1);
+    while (d <= last) {
+      months.add(`${d.getFullYear()}-${d.getMonth()}`);
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+
+    months.forEach(key => {
+      const [y, m] = key.split('-').map(Number);
+      container.appendChild(buildMonthGrid(y, m, today, rangeStart, rangeEnd));
+    });
+  }
+
+  init();
+</script>
+</body>
+</html>
