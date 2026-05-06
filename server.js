@@ -2,6 +2,7 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { PBI_HOST, PBI_PATH, PBI_RESOURCE_KEY, QUERY_BODY, parsePBIResponse } = require('./lib/pbi');
 
 const PORT = 3000;
 const APM_BASE = 'anc.apm.activecommunities.com';
@@ -51,6 +52,42 @@ const server = http.createServer((req, res) => {
     });
 
     apiReq.end();
+    return;
+  }
+
+  // Proxy to Power BI for today's confirmed reservations
+  if (pathname === '/api/today') {
+    console.log('[pbi] fetching today\'s reservations');
+    const pbiReq = https.request(
+      {
+        hostname: PBI_HOST,
+        path:     PBI_PATH,
+        method:   'POST',
+        headers: {
+          'Content-Type':          'application/json;charset=UTF-8',
+          'Content-Length':        Buffer.byteLength(QUERY_BODY),
+          'X-PowerBI-ResourceKey': PBI_RESOURCE_KEY,
+          'Accept':                'application/json',
+          'User-Agent':            'Mozilla/5.0',
+        },
+      },
+      (pbiRes) => {
+        let body = '';
+        pbiRes.on('data', chunk => body += chunk);
+        pbiRes.on('end', () => {
+          const reservations = parsePBIResponse(body);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ reservations }));
+        });
+      }
+    );
+    pbiReq.on('error', (err) => {
+      console.error('[pbi] error:', err.message);
+      res.writeHead(502);
+      res.end(JSON.stringify({ reservations: [], error: err.message }));
+    });
+    pbiReq.write(QUERY_BODY);
+    pbiReq.end();
     return;
   }
 

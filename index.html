@@ -237,6 +237,31 @@
 </div>
 
 <script>
+  // ── Power BI: today's confirmed reservations ───────────────────────────────
+  // null  = not yet fetched (fall back to APM data)
+  // []    = fetched, no reservations today
+  // [...] = fetched, has reservations
+  let pbiReservations = null;
+
+  async function fetchTodayPBIData() {
+    const res = await fetch('/api/today');
+    if (!res.ok) return;
+    const data = await res.json();
+    pbiReservations = data.reservations || [];
+  }
+
+  // Returns PBI slots for a court as [{start: "HH:MM", end: "HH:MM"}],
+  // or null if PBI data isn't loaded.
+  function pbiSlotsForCourt(courtName) {
+    if (pbiReservations === null) return null;
+    return pbiReservations
+      .filter(r => r.courtName === courtName)
+      .map(r => ({
+        start: r.startTime.slice(11, 16), // "1899-12-30T17:30:00" → "17:30"
+        end:   r.endTime.slice(11, 16),
+      }));
+  }
+
   // ── Constants ──────────────────────────────────────────────────────────────
   const COURT_IDS   = [2443, 2444, 2445, 2446, 2447, 2448, 2449];
   const COURT_NAMES = COURT_IDS.map((_, i) =>
@@ -322,9 +347,14 @@
   // ── Calendar rendering ─────────────────────────────────────────────────────
   function dotClass(courtId, dateString, isInRange) {
     if (!isInRange) return 'gray';
+    // For today, prefer PBI data when available
+    if (dateString === ymd(localToday()) && pbiReservations !== null) {
+      const courtName = COURT_NAMES[COURT_IDS.indexOf(courtId)];
+      return pbiReservations.some(r => r.courtName === courtName) ? 'red' : 'green';
+    }
     const dayData = courtData[courtId]?.[dateString];
-    if (!dayData) return 'gray';                // not returned by API
-    if (dayData.booked === null) return 'gray'; // closed
+    if (!dayData) return 'gray';
+    if (dayData.booked === null) return 'gray';
     return dayData.booked.length > 0 ? 'red' : 'green';
   }
 
@@ -410,9 +440,13 @@
     const body = document.getElementById('modal-body');
     body.innerHTML = '';
 
+    const isToday = dateStr === ymd(localToday());
+
     COURT_IDS.forEach((id, i) => {
-      const dayData = courtData[id]?.[dateStr];
-      const booked  = dayData?.booked ?? null;
+      // For today, use PBI data if available; otherwise fall back to APM
+      const booked = (isToday && pbiReservations !== null)
+        ? pbiSlotsForCourt(COURT_NAMES[i])
+        : (courtData[id]?.[dateStr]?.booked ?? null);
 
       const row = document.createElement('div');
       row.className = 'court-row';
@@ -478,7 +512,10 @@
     const rangeEnd   = addDays(today, DAYS_AHEAD);
 
     try {
-      await Promise.all(COURT_IDS.map(id => fetchCourt(id, rangeStart, rangeEnd)));
+      await Promise.all([
+        ...COURT_IDS.map(id => fetchCourt(id, rangeStart, rangeEnd)),
+        fetchTodayPBIData().catch(() => {}), // PBI failure is non-fatal
+      ]);
     } catch (err) {
       document.getElementById('status-msg').textContent =
         'Error loading court data. Please refresh the page.';
