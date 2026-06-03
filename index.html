@@ -176,6 +176,24 @@
     .slot-line { font-size: 0.78rem; color: #555; }
     .no-bookings { font-size: 0.78rem; color: #34a853; font-weight: 500; }
 
+    /* ── Weather summary in modal ── */
+    .weather-summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: #f0f7ff;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 0.83rem;
+      flex-wrap: wrap;
+    }
+    .weather-emoji { font-size: 1.4rem; line-height: 1; }
+    .weather-desc  { color: #444; font-weight: 500; flex: 1; min-width: 80px; }
+    .weather-temp  { color: #222; font-weight: 600; white-space: nowrap; }
+    .weather-wind  { color: #555; white-space: nowrap; }
+    .weather-na    { font-size: 0.78rem; color: #aaa; font-style: italic; margin-bottom: 16px; }
+
     /* ── Disclaimer ── */
     .disclaimer {
       margin-top: 24px;
@@ -260,6 +278,66 @@
         start: r.startTime.slice(11, 16), // "1899-12-30T17:30:00" → "17:30"
         end:   r.endTime.slice(11, 16),
       }));
+  }
+
+  // ── Weather ────────────────────────────────────────────────────────────────
+  // Alki Beach coordinates
+  const ALKI_LAT = 47.5778, ALKI_LON = -122.4157;
+
+  // WMO weather interpretation codes → label + emoji
+  const WMO = {
+    0:  { label: 'Clear sky',        emoji: '☀️'  },
+    1:  { label: 'Mainly clear',     emoji: '🌤️' },
+    2:  { label: 'Partly cloudy',    emoji: '⛅'  },
+    3:  { label: 'Overcast',         emoji: '☁️'  },
+    45: { label: 'Foggy',            emoji: '🌫️' },
+    48: { label: 'Icy fog',          emoji: '🌫️' },
+    51: { label: 'Light drizzle',    emoji: '🌦️' },
+    53: { label: 'Drizzle',          emoji: '🌦️' },
+    55: { label: 'Heavy drizzle',    emoji: '🌧️' },
+    61: { label: 'Light rain',       emoji: '🌧️' },
+    63: { label: 'Rain',             emoji: '🌧️' },
+    65: { label: 'Heavy rain',       emoji: '🌧️' },
+    71: { label: 'Light snow',       emoji: '❄️'  },
+    73: { label: 'Snow',             emoji: '❄️'  },
+    75: { label: 'Heavy snow',       emoji: '❄️'  },
+    77: { label: 'Snow grains',      emoji: '❄️'  },
+    80: { label: 'Light showers',    emoji: '🌦️' },
+    81: { label: 'Showers',          emoji: '🌧️' },
+    82: { label: 'Heavy showers',    emoji: '🌧️' },
+    85: { label: 'Snow showers',     emoji: '❄️'  },
+    86: { label: 'Heavy snow showers', emoji: '❄️' },
+    95: { label: 'Thunderstorm',     emoji: '⛈️'  },
+    96: { label: 'Thunderstorm',     emoji: '⛈️'  },
+    99: { label: 'Thunderstorm',     emoji: '⛈️'  },
+  };
+
+  function degToCompass(deg) {
+    return ['N','NE','E','SE','S','SW','W','NW'][Math.round(deg / 45) % 8];
+  }
+
+  // weatherByDate[dateStr] = { high, low, code, windSpeed, windDir }
+  const weatherByDate = {};
+
+  async function fetchWeather() {
+    const url = 'https://api.open-meteo.com/v1/forecast' +
+      `?latitude=${ALKI_LAT}&longitude=${ALKI_LON}` +
+      `&daily=temperature_2m_max,temperature_2m_min,weather_code,wind_speed_10m_max,wind_direction_10m_dominant` +
+      `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles` +
+      `&forecast_days=16`;
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+    const d = data.daily;
+    d.time.forEach((date, i) => {
+      weatherByDate[date] = {
+        high:      Math.round(d.temperature_2m_max[i]),
+        low:       Math.round(d.temperature_2m_min[i]),
+        code:      d.weather_code[i],
+        windSpeed: Math.round(d.wind_speed_10m_max[i]),
+        windDir:   d.wind_direction_10m_dominant[i],
+      };
+    });
   }
 
   // ── Constants ──────────────────────────────────────────────────────────────
@@ -442,6 +520,25 @@
 
     const isToday = dateStr === ymd(localToday());
 
+    // Weather section
+    const wx = weatherByDate[dateStr];
+    if (wx) {
+      const wmo = WMO[wx.code] || { label: 'Unknown', emoji: '🌡️' };
+      const wxEl = document.createElement('div');
+      wxEl.className = 'weather-summary';
+      wxEl.innerHTML =
+        `<span class="weather-emoji">${wmo.emoji}</span>` +
+        `<span class="weather-desc">${wmo.label}</span>` +
+        `<span class="weather-temp">${wx.low}–${wx.high}°F</span>` +
+        `<span class="weather-wind">💨 ${wx.windSpeed} mph ${degToCompass(wx.windDir)}</span>`;
+      body.appendChild(wxEl);
+    } else {
+      const naEl = document.createElement('div');
+      naEl.className = 'weather-na';
+      naEl.textContent = 'Weather forecast not available for this date';
+      body.appendChild(naEl);
+    }
+
     COURT_IDS.forEach((id, i) => {
       // For today, use PBI data if available; otherwise fall back to APM
       const booked = (isToday && pbiReservations !== null)
@@ -514,7 +611,8 @@
     try {
       await Promise.all([
         ...COURT_IDS.map(id => fetchCourt(id, rangeStart, rangeEnd)),
-        fetchTodayPBIData().catch(() => {}), // PBI failure is non-fatal
+        fetchTodayPBIData().catch(() => {}),   // PBI failure is non-fatal
+        fetchWeather().catch(err => console.warn('[weather]', err)), // weather failure is non-fatal
       ]);
     } catch (err) {
       document.getElementById('status-msg').textContent =
